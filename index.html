@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة المحلات والعروض</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body{font-family:system-ui;background:#f2f4f8;}
+header{background:#2f5bea;color:white;padding:20px;text-align:center;font-weight:700;font-size:26px;}
+.screen{display:none;padding:16px;opacity:0;transform:translateY(10px);transition:all .4s ease;}
+.screen.active{display:block;opacity:1;transform:translateY(0);}
+.card{background:white;padding:20px;border-radius:16px;margin-bottom:16px;box-shadow:0 3px 12px rgba(0,0,0,.12);transition:all .3s ease;}
+input,select{width:100%;padding:16px;margin:10px 0;border:1px solid #ccc;border-radius:14px;font-size:20px;transition:all .3s ease;}
+.btn{padding:16px;border:none;border-radius:14px;cursor:pointer;font-weight:700;transition:all .3s;font-size:20px;}
+.btn:hover{opacity:0.9;transform:scale(1.02);}
+.primary{background:#2f5bea;color:white;}
+.green{background:#27ae60;color:white;}
+.red{background:#e74c3c;color:white;}
+.gray{background:#ddd;color:#333;}
+.row{display:flex;gap:10px;margin-top:14px;}
+.row button{flex:1;font-size:20px;}
+.small{font-size:18px;color:#555;white-space:pre-line;margin-top:10px;transition:all .3s ease;}
+.slide{max-height:0;overflow:hidden;transition:all .4s ease;}
+.slide.open{max-height:1500px;margin-top:12px;opacity:1;}
+.arrow{display:inline-block;cursor:pointer;font-weight:bold;margin-left:10px;transition:transform .3s;font-size:24px;}
+.arrow.open{transform:rotate(90deg);}
+.shop-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:22px;font-weight:700;padding:8px;transition:all .3s ease;}
+.fade-card{opacity:0;transform:translateY(20px);animation:fadeCard 0.5s forwards;}
+@keyframes fadeCard{to{opacity:1;transform:translateY(0);}}
+</style>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2f5bea">
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js');
+  });
+}
+</script>
+</head>
+<body>
+
+<header>إدارة المحلات</header>
+
+<div id="home" class="screen active">
+  <button class="btn primary w-full mb-4" onclick="go('shops')">المحلات</button>
+  <button class="btn primary w-full mb-4" onclick="go('shopsForOffers')">العروض</button>
+  <button class="btn gray w-full" onclick="go('searchByModel')">بحث حسب الموديل</button>
+</div>
+
+<div id="shops" class="screen">
+  <button class="btn gray w-full mb-4" onclick="go('home')">⬅ رجوع</button>
+  <button class="btn green w-full mb-4" onclick="openShopForm()">➕ إضافة محل</button>
+  <div id="shopsList"></div>
+</div>
+
+<div id="shopForm" class="screen">
+  <button class="btn gray w-full mb-4" onclick="go('shops')">⬅ رجوع</button>
+  <input id="sName" placeholder="اسم المحل" class="p-4 text-xl mb-4 rounded-xl">
+  <input id="sPhone" placeholder="رقم الهاتف" class="p-4 text-xl mb-4 rounded-xl">
+  <input id="sAddress" placeholder="العنوان" class="p-4 text-xl mb-4 rounded-xl">
+  <select id="sType" class="p-4 text-xl mb-4 rounded-xl">
+    <option value="">اختصاص المحل</option>
+    <option>لابتوب</option>
+    <option>لابتوب و All In One</option>
+    <option>رامات وهاردات</option>
+    <option>بطاريات</option>
+    <option>قطع صيانة</option>
+  </select>
+  <button class="btn green w-full p-5 text-2xl" onclick="saveShop()">حفظ</button>
+</div>
+
+<div id="shopsForOffers" class="screen">
+  <button class="btn gray w-full mb-4" onclick="go('home')">⬅ رجوع</button>
+  <div id="offerShops"></div>
+</div>
+
+<div id="offers" class="screen">
+  <button class="btn gray w-full mb-4" onclick="go('shops')">⬅ رجوع</button>
+  <div id="offerFormContainer"></div>
+  <div id="offersList"></div>
+</div>
+
+<div id="searchByModel" class="screen">
+  <button class="btn gray w-full mb-4" onclick="go('home')">⬅ رجوع</button>
+  <input id="modelSearchInput" placeholder="اكتب موديل الجهاز" class="p-4 text-xl mb-4 rounded-xl">
+  <button class="btn primary w-full mb-4 p-4 text-xl" onclick="searchByModel()">بحث</button>
+  <div id="searchResults"></div>
+</div>
+
+<script>
+let shops=JSON.parse(localStorage.getItem("shops")||"[]");
+let editShopIndex=null,currentShopIndex=null,editOfferIndex=null,currentCapturedImage=null;
+
+function go(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+  if(id==="shops") renderShops();
+  if(id==="shopsForOffers") renderOfferShops();
+}
+
+function openShopForm(index=null){
+  editShopIndex=index;
+  if(index!==null){ let s=shops[index]; sName.value=s.name;sPhone.value=s.phone;sAddress.value=s.address;sType.value=s.type; }
+  else{ sName.value=sPhone.value=sAddress.value=""; sType.value=""; }
+  go("shopForm");
+}
+
+function saveShop(){
+  if(!sName.value) return alert("أدخل اسم المحل");
+  let shop={name:sName.value,phone:sPhone.value,address:sAddress.value,type:sType.value,offers:editShopIndex!==null?shops[editShopIndex].offers:[]};
+  if(editShopIndex!==null) shops[editShopIndex]=shop; else shops.push(shop);
+  localStorage.setItem("shops",JSON.stringify(shops));
+  go("shops");
+}
+
+function renderShops(){
+  shopsList.innerHTML="";
+  shops.forEach((s,i)=>{
+    shopsList.innerHTML+=`
+    <div class="card">
+      <div class="shop-header" onclick="toggleShopOptions(${i}, this)">
+        <span>${s.name}</span><span class="arrow">▶</span>
+      </div>
+      <div id="shopOptions${i}" class="slide"></div>
+    </div>`;
+  });
+}
+
+function toggleShopOptions(i,el){
+  const container=document.getElementById("shopOptions"+i);
+  const arrow=el.querySelector(".arrow");
+  if(container.classList.contains("open")){
+    container.classList.remove("open"); arrow.classList.remove("open"); container.innerHTML="";
+  }else{
+    container.classList.add("open"); arrow.classList.add("open");
+    container.innerHTML=`
+      <div class="row mt-4">
+        <button class="btn green p-4 text-xl" onclick="openOfferForm(${i})">➕ إضافة عرض</button>
+        <button class="btn gray p-4 text-xl" onclick="showOffers(${i})">العروض</button>
+        <button class="btn red p-4 text-xl" onclick="deleteShop(${i})">🗑 حذف المحل</button>
+      </div>
+    `;
+    renderShopOffers(i);
+  }
+}
+
+function deleteShop(i){ if(confirm("حذف المحل؟")){ shops.splice(i,1); localStorage.setItem("shops",JSON.stringify(shops)); renderShops(); } }
+
+function renderOfferShops(){
+  offerShops.innerHTML="";
+  shops.forEach((s,i)=>{
+    offerShops.innerHTML+=`
+    <div class="card">
+      <b class="text-2xl">${s.name}</b>
+      <div class="row mt-4">
+        <button class="btn green p-4 text-xl" onclick="openOfferForm(${i})">➕ إضافة عرض</button>
+        <button class="btn primary p-4 text-xl" onclick="showOffers(${i})">العروض</button>
+      </div>
+    </div>`;
+  });
+}
+
+function openOfferForm(shopIndex,offerIndex=null){
+  currentShopIndex=shopIndex; editOfferIndex=offerIndex; go("offers");
+  let o=offerIndex!==null?shops[shopIndex].offers[offerIndex]:null;
+  currentCapturedImage = o ? o.image : null;
+
+  let html=`<div class="card fade-card" style="border-radius:25px; padding:20px;">
+    <button class="btn gray text-xl p-4 mb-4 w-full" onclick="captureImage()">📷 إضافة صورة</button>
+    <select id="brand" class="text-xl p-4 mb-4 w-full rounded-xl">
+      <option>Dell</option><option>HP</option><option>Acer</option><option>Asus</option><option>Lenovo</option><option>Toshiba</option><option>Fujitsu</option><option>Dynabook</option>
+    </select>
+    <input id="model" placeholder="موديل الجهاز" class="text-xl p-4 mb-4 w-full rounded-xl" value="${o?o.model:""}">
+    <select id="cpu" class="text-xl p-4 mb-4 w-full rounded-xl">
+      <option>Ci3</option><option>Ci5</option><option>Ci7</option><option>Ci9</option><option>Core 5</option><option>Core 7</option>
+    </select>
+    <select id="gen" class="text-xl p-4 mb-4 w-full rounded-xl">
+      <option>4th</option><option>5th</option><option>6th</option><option>7th</option><option>8th</option><option>9th</option>
+      <option>10th</option><option>11th</option><option>12th</option><option>13th</option><option>14th</option>
+    </select>
+    <select id="ram" class="text-xl p-4 mb-4 w-full rounded-xl">
+      <option>8-256</option><option>8-512</option><option>16-256</option><option>16-512</option><option>32-256</option><option>32-512</option><option>No Ram - No hard</option>
+    </select>
+    <select id="vga" class="text-xl p-4 mb-4 w-full rounded-xl">
+      <option>Intel Graphic</option><option>2GB</option><option>4GB</option><option>6GB</option><option>8GB</option>
+    </select>
+    <input id="price" placeholder="السعر AED" class="text-xl p-4 mb-4 w-full rounded-xl" value="${o?o.price:""}">
+    <div class="row mt-4">
+      <button class="btn green p-4 text-xl" onclick="saveOffer()">حفظ</button>
+      <button class="btn gray p-4 text-xl" onclick="go('shops')">إلغاء</button>
+    </div>
+  </div>`;
+
+  document.getElementById("offerFormContainer").innerHTML=html;
+}
+
+function captureImage() {
+  const input=document.createElement("input");
+  input.type="file";
+  input.accept="image/*";
+  input.capture="environment";
+  input.onchange=function(event){
+    const file=event.target.files[0];
+    if(file){
+      const reader=new FileReader();
+      reader.onload=function(e){
+        currentCapturedImage = e.target.result; 
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+  input.click();
+}
+
+function saveOffer(){
+  let d=new Date();
+  const dateStr=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  const newOffer={
+    brand:document.getElementById("brand").value,
+    model:document.getElementById("model").value,
+    cpu:document.getElementById("cpu").value,
+    gen:document.getElementById("gen").value,
+    ram:document.getElementById("ram").value,
+    vga:document.getElementById("vga").value,
+    price:document.getElementById("price").value,
+    date:dateStr,
+    image: currentCapturedImage
+  };
+  if(editOfferIndex!==null) shops[currentShopIndex].offers[editOfferIndex]=newOffer;
+  else shops[currentShopIndex].offers.push(newOffer);
+  localStorage.setItem("shops",JSON.stringify(shops));
+  showOffers(currentShopIndex);
+}
+
+function showOffers(shopIndex){
+  currentShopIndex=shopIndex; go("offers"); document.getElementById("offerFormContainer").innerHTML="";
+  renderShopOffers(shopIndex);
+}
+
+function renderShopOffers(shopIndex){
+  const container=document.getElementById("offersList");
+  container.innerHTML="";
+  shops[shopIndex].offers.forEach((o,i)=>{
+    let text=`OFFER
+SHOP  : ${shops[shopIndex].name}
+MODEL : ${o.brand} ${o.model}
+CPU : ${o.cpu}
+Gen : ${o.gen}
+Ram/Hard : ${o.ram}
+VGA : ${o.vga}
+PRICE : ${o.price} AED
+DATE : ${o.date}`;
+    const div=document.createElement("div");
+    div.className="card fade-card";
+    div.innerHTML=`
+      <div class="small">${text.replace(/\n/g,"<br>")}</div>
+      <div class="offer-actions row">
+        <button class="btn primary text-xl p-4" onclick="copyOfferText(\`${text}\`)">نسخ</button>
+        <button class="btn red text-xl p-4" onclick="deleteOffer(${shopIndex},${i})">حذف</button>
+        <button class="btn gray text-xl p-4" onclick="openOfferForm(${shopIndex},${i})">تعديل</button>
+        ${o.image ? `<button class="btn green text-xl p-4" onclick="viewOfferImage('${o.image}')">عرض الصورة</button>` : ''}
+      </div>`;
+    container.appendChild(div);
+    div.style.animationDelay=`${i*0.1}s`;
+  });
+}
+
+function deleteOffer(shopIndex,offerIndex){ if(confirm("حذف العرض؟")){ shops[shopIndex].offers.splice(offerIndex,1); localStorage.setItem("shops",JSON.stringify(shops)); showOffers(shopIndex); } }
+
+function copyOfferText(text){
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>{toast("تم نسخ العرض ✅");}).catch(()=>{fallbackCopy(text);});}
+  else fallbackCopy(text);
+}
+function fallbackCopy(text){const textarea=document.createElement("textarea");textarea.value=text;textarea.style.position="fixed";textarea.style.opacity="0";document.body.appendChild(textarea);textarea.focus();textarea.select();try{document.execCommand("copy");toast("تم نسخ العرض ✅");}catch(e){alert("لم يتم النسخ، جهازك يمنع النسخ التلقائي");}document.body.removeChild(textarea);}
+function toast(msg){const t=document.createElement("div");t.innerText=msg;t.className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-blue-600 text-white p-4 rounded shadow text-xl";document.body.appendChild(t);setTimeout(()=>t.remove(),2000);}
+function viewOfferImage(src){ const imgWindow=window.open(""); imgWindow.document.write(`<img src="${src}" style="width:100%;height:auto;">`);}
+
+function searchByModel(){
+  const query = document.getElementById("modelSearchInput").value.toLowerCase();
+  const container = document.getElementById("searchResults");
+  container.innerHTML="";
+  if(!query) return alert("ادخل موديل للبحث");
+  shops.forEach((shop)=>{
+    shop.offers.forEach((offer)=>{
+      if((offer.model+""+offer.brand).toLowerCase().includes(query)){
+        let text=`OFFER
+SHOP  : ${shop.name}
+MODEL : ${offer.brand} ${offer.model}
+CPU : ${offer.cpu}
+Gen : ${offer.gen}
+Ram/Hard : ${offer.ram}
+VGA : ${offer.vga}
+PRICE : ${offer.price} AED
+DATE : ${offer.date}`;
+        const div=document.createElement("div");
+        div.className="card fade-card";
+        div.innerHTML=`
+          <div class="small">${text.replace(/\n/g,"<br>")}</div>
+          <div class="offer-actions row">
+            <button class="btn primary text-xl p-4" onclick="copyOfferText(\`${text}\`)">نسخ</button>
+            ${offer.image ? `<button class="btn green text-xl p-4" onclick="viewOfferImage('${offer.image}')">عرض الصورة</button>` : ''}
+          </div>`;
+        container.appendChild(div);
+      }
+    });
+  });
+}
+</script>
+
+</body>
+</html>
